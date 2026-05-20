@@ -1,12 +1,14 @@
 package com.herb.numi
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +16,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.herb.numi.data.Record
+import com.herb.numi.data.export.BillExportManager
+import com.herb.numi.data.export.ExportResult
 import com.herb.numi.ui.BillsScreen
 import com.herb.numi.ui.HomeScreen
 import com.herb.numi.ui.RecordScreen
@@ -23,17 +29,74 @@ import com.herb.numi.ui.SettingsScreen
 import com.herb.numi.ui.navigation.BottomNavigationBar
 import com.herb.numi.ui.navigation.Screen
 import com.herb.numi.ui.theme.NumiTheme
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.coroutines.launch
 
 /**
  * 主活动
  * 应用入口，包含底部导航栏和页面路由
  */
 class MainActivity : ComponentActivity() {
+
+    private lateinit var billExportManager: BillExportManager
+
+    /**
+     * 待导出的记录列表缓存
+     * 用于在SAF选择器返回后执行导出
+     */
+    private var pendingExportRecords: List<Record>? = null
+
+    /**
+     * 系统文件保存器（SAF）回调
+     * 用户选择保存位置后触发实际导出
+     */
+    private val createDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: Uri? ->
+        val records = pendingExportRecords
+        pendingExportRecords = null
+
+        if (uri == null || records == null) {
+            return@registerForActivityResult
+        }
+
+        lifecycleScope.launch {
+            val result = billExportManager.exportToCsv(
+                records = records,
+                uri = uri,
+                customFileName = billExportManager.generateDefaultFileName()
+            )
+
+            when (result) {
+                is ExportResult.Success -> {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "成功导出 ${result.recordCount} 条账单到 ${result.fileName}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                is ExportResult.Error -> {
+                    Toast.makeText(
+                        this@MainActivity,
+                        result.message,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                is ExportResult.Empty -> {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "暂无账单数据可导出",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        billExportManager = BillExportManager(this)
 
         setContent {
             val viewModel: RecordViewModel = viewModel()
@@ -276,7 +339,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Screen.Settings.route -> SettingsScreen(
                         viewModel = viewModel,
-                        onExportBackup = { exportBackup(viewModel) },
+                        onExportBills = { records -> launchExportFlow(records) },
                         themeMode = viewModel.themeMode.value,
                         onThemeChange = { viewModel.setThemeMode(it) }
                     )
@@ -286,36 +349,22 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 导出备份
-     * 将数据导出为 JSON 格式并通过系统分享
+     * 启动导出流程
+     * 1. 校验数据非空
+     * 2. 打开SAF文件保存器让用户选择保存位置
+     * 3. 在回调中执行实际导出
+     *
+     * @param records 待导出的账单记录列表
      */
-    private fun exportBackup(viewModel: RecordViewModel) {
-        val records = viewModel.allRecords.value
-
+    private fun launchExportFlow(records: List<Record>) {
         if (records.isEmpty()) {
-            Toast.makeText(this, "暂无数据可导出", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "暂无账单数据可导出", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val jsonArray = JSONArray()
-        records.forEach { record ->
-            val jsonObject = JSONObject().apply {
-                put("id", record.id)
-                put("amount", record.amount)
-                put("type", record.type)
-                put("category", record.category)
-                put("note", record.note ?: "")
-                put("createdAt", record.createdAt)
-            }
-            jsonArray.put(jsonObject)
-        }
+        pendingExportRecords = records
 
-        val jsonString = jsonArray.toString(2)
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/json"
-            putExtra(Intent.EXTRA_TEXT, jsonString)
-            putExtra(Intent.EXTRA_SUBJECT, "数笔备份数据")
-        }
-        startActivity(Intent.createChooser(shareIntent, "导出备份"))
+        val defaultFileName = billExportManager.generateDefaultFileName()
+        createDocumentLauncher.launch(defaultFileName)
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,17 +20,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.herb.numi.data.Record
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * 设置页面
- * 整合应用设置和数据管理功能，包括导出备份
+ * 整合应用设置和数据管理功能，包括导出账单
  */
 @Composable
 fun SettingsScreen(
     viewModel: RecordViewModel = viewModel(),
-    onExportBackup: () -> Unit,
+    onExportBills: (List<Record>) -> Unit,
     themeMode: String = "system",
     onThemeChange: (String) -> Unit = {}
 ) {
@@ -60,12 +59,10 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 导出备份
-        SettingsItem(
-            icon = Icons.Default.Share,
-            title = "导出备份",
-            subtitle = "将数据导出为 JSON 格式",
-            onClick = onExportBackup
+        // 导出账单
+        ExportBillItem(
+            records = allRecords,
+            onExportBills = onExportBills
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -139,6 +136,73 @@ fun SettingsScreen(
                 InfoItem(label = "应用名称", value = "数笔")
                 InfoItem(label = "版本", value = "1.1.2")
                 InfoItem(label = "开发者", value = "Herb")
+            }
+        }
+    }
+}
+
+/**
+ * 导出账单组件
+ * 包含导出按钮，点击后触发账单导出流程
+ */
+@Composable
+private fun ExportBillItem(
+    records: List<Record>,
+    onExportBills: (List<Record>) -> Unit
+) {
+    val isEnabled = records.isNotEmpty()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = isEnabled) { onExportBills(records) },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isEnabled) {
+                MaterialTheme.colorScheme.surface
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                tint = if (isEnabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                },
+                modifier = Modifier.size(24.dp)
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "导出账单",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isEnabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    }
+                )
+                Text(
+                    text = if (isEnabled) {
+                        "将账单数据导出为 CSV 格式"
+                    } else {
+                        "暂无账单数据可导出"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
