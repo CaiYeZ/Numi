@@ -137,7 +137,7 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 InfoItem(label = "应用名称", value = "数笔")
-                InfoItem(label = "版本", value = "1.1.1")
+                InfoItem(label = "版本", value = "1.1.2")
                 InfoItem(label = "开发者", value = "Herb")
             }
         }

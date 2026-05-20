@@ -1,0 +1,29 @@
+# .github/release.yml
+
+changelog:
+  categories:
+    - title: "✨ 新增功能"
+      labels:
+        - feature
+        - enhancement
+        - new
+    - title: "⚡ 优化改进"
+      labels:
+        - optimization
+        - performance
+        - ui/ux
+    - title: "🐛 修复问题"
+      labels:
+        - bug
+        - fix
+    - title: "📄 文档更新"
+      labels:
+        - documentation
+    - title: "🔧 其他变更"
+      labels:
+        - chore
+        - refactor
+        - build
+    - title: "⬆️ 依赖升级"
+      labels:
+        - dependencies
