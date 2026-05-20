@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.herb.numi.data.Record
-import com.herb.numi.data.RecordRepository
+import com.herb.numi.data.RecordRepositoryInterface
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.*
@@ -14,11 +14,11 @@ import java.util.*
  * 负责管理记账界面的状态和数据
  *
  * 遵循单一职责原则：只负责记账业务逻辑，不处理 UI 渲染
- * 遵循依赖注入原则：通过 Application 接收 Repository 实例
+ * 遵循依赖注入原则：通过 Application 接收 Repository 接口实例
  */
 class RecordViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository: RecordRepository
+    private val repository: RecordRepositoryInterface
 
     init {
         val numiApp = application as com.herb.numi.NumiApplication
@@ -129,13 +129,6 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
      */
     fun setNote(note: String) {
         _note.value = note
-    }
-
-    /**
-     * 切换时间选择
-     */
-    fun toggleTime() {
-        // 此方法已弃用，使用 setSelectedTime 代替
     }
 
     /**

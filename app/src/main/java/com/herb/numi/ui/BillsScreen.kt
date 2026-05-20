@@ -6,13 +6,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.herb.numi.data.Record
 import kotlinx.coroutines.launch
-import java.util.*
+import java.util.Calendar
 
 /**
  * 账单页面主入口
