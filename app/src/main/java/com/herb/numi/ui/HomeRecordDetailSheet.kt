@@ -190,7 +190,7 @@ private fun DetailCategoryRow(
         Text(
             text = "分类",
             fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurface
         )
         Row(
             verticalAlignment = Alignment.CenterVertically,

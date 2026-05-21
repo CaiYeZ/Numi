@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.herb.numi.data.Record
+import com.herb.numi.data.ReimburseStatus
 import com.herb.numi.data.export.BillExportManager
 import com.herb.numi.data.export.ExportResult
 import com.herb.numi.ui.BillsScreen
@@ -134,16 +135,38 @@ class MainActivity : ComponentActivity() {
         // 记录前一个非记账页面的路由，用于判断动画方向
         var previousRoute by remember { mutableStateOf(currentRoute) }
 
-        // 标记是否显示报销统计界面（隐藏底部导航，支持手势返回）
+        // 标记是否显示报销统计界面（保留底部导航，支持返回手势）
         var isReimbursement by remember { mutableStateOf(false) }
+        // 记录进入报销统计页前所在的底部页面，返回时恢复到该页面
+        var reimbursementReturnRoute by remember { mutableStateOf(Screen.Home.route) }
+        // 从报销页进入记账页时，记账完成/返回后应回到报销页
+        var shouldReturnToReimbursementAfterRecord by remember { mutableStateOf(false) }
+        // 报销页底部 FAB 记账时使用当前 Tab 对应的报销状态
+        var reimbursementRecordStatus by remember { mutableStateOf(ReimburseStatus.PENDING.value) }
 
-        // 根据是否在记账状态或报销统计状态决定是否显示底部导航
-        val showBottomBar = !isRecording && !isReimbursement
+        // 记账页全屏展示；报销统计页保留底部导航和 FAB
+        val showBottomBar = !isRecording
 
-        // 处理返回手势：在记账界面或报销统计界面时，返回到 HomeScreen 而不是退出应用
-        BackHandler(enabled = isRecording || isReimbursement) {
-            isRecording = false
+        fun leaveReimbursement() {
             isReimbursement = false
+            currentRoute = reimbursementReturnRoute
+        }
+
+        fun finishRecord() {
+            isRecording = false
+            if (shouldReturnToReimbursementAfterRecord) {
+                isReimbursement = true
+                shouldReturnToReimbursementAfterRecord = false
+            }
+        }
+
+        // 处理外层返回：记账页优先回到来源页，报销页回到进入前的底部页面
+        BackHandler(enabled = isRecording || isReimbursement) {
+            if (isRecording) {
+                finishRecord()
+            } else if (isReimbursement) {
+                leaveReimbursement()
+            }
         }
 
         Scaffold(
@@ -152,12 +175,19 @@ class MainActivity : ComponentActivity() {
                     BottomNavigationBar(
                         currentRoute = currentRoute,
                         onNavigate = { route ->
+                            if (isReimbursement) {
+                                isReimbursement = false
+                            }
                             previousRoute = currentRoute
                             currentRoute = route
                         },
                         onNavigateToRecord = {
                             viewModel.resetInput()
                             viewModel.cancelEdit()
+                            shouldReturnToReimbursementAfterRecord = isReimbursement
+                            if (isReimbursement) {
+                                viewModel.setReimburseStatus(reimbursementRecordStatus)
+                            }
                             isRecording = true
                         }
                     )
@@ -318,13 +348,16 @@ class MainActivity : ComponentActivity() {
                         onNavigateToRecord = {
                             viewModel.resetInput()
                             viewModel.cancelEdit()
+                            shouldReturnToReimbursementAfterRecord = false
                             isRecording = true
                         },
                         onEditRecord = { record ->
                             viewModel.loadRecordForEdit(record)
+                            shouldReturnToReimbursementAfterRecord = false
                             isRecording = true
                         },
                         onNavigateToReimbursement = {
+                            reimbursementReturnRoute = currentRoute
                             isReimbursement = true
                         }
                     )
@@ -333,32 +366,31 @@ class MainActivity : ComponentActivity() {
                         onNavigateToRecord = {
                             viewModel.resetInput()
                             viewModel.cancelEdit()
+                            shouldReturnToReimbursementAfterRecord = false
                             isRecording = true
                         },
                         onEditRecord = { record ->
                             viewModel.loadRecordForEdit(record)
+                            shouldReturnToReimbursementAfterRecord = false
                             isRecording = true
                         }
                     )
                     Screen.Record.route -> RecordScreen(
                         viewModel = viewModel,
                         onRecordingComplete = {
-                            isRecording = false
+                            finishRecord()
                         },
                         onNavigateBack = {
-                            isRecording = false
+                            finishRecord()
                         }
                     )
                     Screen.Reimbursement.route -> ReimbursementScreen(
                         viewModel = viewModel,
                         onNavigateBack = {
-                            isReimbursement = false
+                            leaveReimbursement()
                         },
-                        onNavigateToRecord = { status ->
-                            viewModel.resetInput()
-                            viewModel.cancelEdit()
-                            viewModel.setReimburseStatus(status)
-                            isRecording = true
+                        onRecordStatusPresetChange = { status ->
+                            reimbursementRecordStatus = status
                         }
                     )
                     Screen.Settings.route -> SettingsScreen(

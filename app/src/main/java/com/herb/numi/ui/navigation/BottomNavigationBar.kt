@@ -71,6 +71,7 @@ fun BottomNavigationBar(
         ) {
             // 药丸型导航栏容器
             Surface(
+//                modifier = Modifier.fillMaxWidth(0.8f),
                 modifier = Modifier.width(270.dp),
                 shape = RoundedCornerShape(32.dp),
                 color = MaterialTheme.colorScheme.surface,
