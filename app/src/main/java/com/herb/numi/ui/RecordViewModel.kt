@@ -45,6 +45,10 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedTime = MutableStateFlow(Calendar.getInstance())
     val selectedTime: StateFlow<Calendar> = _selectedTime.asStateFlow()
 
+    // 报销状态：none（非报销）、pending（待报销）、reimbursed（已报销）
+    private val _reimburseStatus = MutableStateFlow("none")
+    val reimburseStatus: StateFlow<String> = _reimburseStatus.asStateFlow()
+
     // 正在编辑的记录ID（null表示新增模式）
     private val _editingRecordId = MutableStateFlow<Long?>(null)
 
@@ -139,12 +143,20 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
+     * 设置报销状态
+     */
+    fun setReimburseStatus(status: String) {
+        _reimburseStatus.value = status
+    }
+
+    /**
      * 重置输入
      */
     fun resetInput() {
         _amount.value = ""
         _note.value = ""
         _selectedTime.value = Calendar.getInstance()
+        _reimburseStatus.value = "none"
     }
 
     /**
@@ -155,12 +167,15 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
         if (amountValue <= 0) return
 
         viewModelScope.launch {
+            val currentTime = _selectedTime.value.timeInMillis
             val record = Record(
                 amount = amountValue,
                 type = _recordType.value,
                 category = _selectedCategory.value,
                 note = _note.value.ifEmpty { null },
-                createdAt = _selectedTime.value.timeInMillis,
+                createdAt = currentTime,
+                updatedAt = currentTime,
+                reimburseStatus = _reimburseStatus.value
             )
 
             repository.insertRecord(record)
@@ -169,6 +184,7 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
             _amount.value = ""
             _note.value = ""
             _selectedTime.value = Calendar.getInstance()
+            _reimburseStatus.value = "none"
 
             onSuccess()
         }
@@ -214,6 +230,7 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
         _selectedTime.value = Calendar.getInstance().apply {
             timeInMillis = record.createdAt
         }
+        _reimburseStatus.value = record.reimburseStatus
         _editingRecordId.value = record.id
     }
 
@@ -227,7 +244,9 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
                 type = _recordType.value,
                 category = _selectedCategory.value,
                 note = _note.value.ifEmpty { null },
-                createdAt = _selectedTime.value.timeInMillis
+                createdAt = _selectedTime.value.timeInMillis,
+                updatedAt = System.currentTimeMillis(),
+                reimburseStatus = _reimburseStatus.value
             )
             repository.updateRecord(updatedRecord)
 
@@ -235,6 +254,7 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
             _amount.value = ""
             _note.value = ""
             _selectedTime.value = Calendar.getInstance()
+            _reimburseStatus.value = "none"
             _editingRecordId.value = null
 
             onSuccess()
@@ -253,7 +273,21 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
         _amount.value = ""
         _note.value = ""
         _selectedTime.value = Calendar.getInstance()
+        _reimburseStatus.value = "none"
         _editingRecordId.value = null
+    }
+
+    /**
+     * 批量更新记录的报销状态
+     * @param ids 记录ID列表
+     * @param status 目标报销状态
+     * @param onSuccess 成功回调
+     */
+    fun updateRecordsReimburseStatus(ids: List<Long>, status: String, onSuccess: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.updateRecordsReimburseStatus(ids, status)
+            onSuccess()
+        }
     }
 
     /**

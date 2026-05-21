@@ -77,4 +77,11 @@ class RecordRepository(private val recordDao: RecordDao) : RecordRepositoryInter
     override suspend fun getAllRecordsForBackup(): List<Record> {
         return recordDao.getAllRecordsForBackup()
     }
+
+    /**
+     * 批量更新记录的报销状态
+     */
+    override suspend fun updateRecordsReimburseStatus(ids: List<Long>, status: String) {
+        recordDao.updateReimburseStatusByIds(ids, status)
+    }
 }

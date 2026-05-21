@@ -3,13 +3,14 @@ package com.herb.numi.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.herb.numi.data.Record
 import kotlinx.coroutines.launch
@@ -27,7 +28,8 @@ import java.util.*
 fun HomeScreen(
     viewModel: RecordViewModel = viewModel(),
     onNavigateToRecord: () -> Unit,
-    onEditRecord: (Record) -> Unit
+    onEditRecord: (Record) -> Unit,
+    onNavigateToReimbursement: () -> Unit
 ) {
     val allRecords by viewModel.allRecords.collectAsState()
     val monthExpense by viewModel.monthExpense.collectAsState()
@@ -101,6 +103,7 @@ fun HomeScreen(
                     recordToDelete = record
                     showDeleteConfirm = true
                 },
+                onNavigateToReimbursement = onNavigateToReimbursement,
                 paddingValues = paddingValues
             )
 
@@ -199,6 +202,7 @@ private fun HomeContent(
     onSelectAll: () -> Unit,
     onBatchDelete: () -> Unit,
     onDeleteRecord: (Record) -> Unit,
+    onNavigateToReimbursement: () -> Unit,
     paddingValues: PaddingValues
 ) {
     // 按日期分组，每组内部按时间降序排列（仅显示近3天记录）
@@ -224,13 +228,15 @@ private fun HomeContent(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(paddingValues),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+            .padding(bottom = paddingValues.calculateBottomPadding()),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = TopContentSpacing,
+            bottom = 16.dp
+        ),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        item {
-            Spacer(modifier = Modifier.height(4.dp))
-        }
         item {
             HomeMonthOverviewCard(
                 monthExpense = monthExpense,
@@ -239,13 +245,32 @@ private fun HomeContent(
         }
 
         item {
-            Text(
-                text = "近期记录",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "近期记录",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Surface(
+                    onClick = onNavigateToReimbursement,
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        text = "报销统计",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
         }
 
         if (groupedRecords.isEmpty()) {

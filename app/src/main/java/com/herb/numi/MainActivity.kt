@@ -25,6 +25,7 @@ import com.herb.numi.ui.BillsScreen
 import com.herb.numi.ui.HomeScreen
 import com.herb.numi.ui.RecordScreen
 import com.herb.numi.ui.RecordViewModel
+import com.herb.numi.ui.ReimbursementScreen
 import com.herb.numi.ui.SettingsScreen
 import com.herb.numi.ui.navigation.BottomNavigationBar
 import com.herb.numi.ui.navigation.Screen
@@ -133,12 +134,16 @@ class MainActivity : ComponentActivity() {
         // 记录前一个非记账页面的路由，用于判断动画方向
         var previousRoute by remember { mutableStateOf(currentRoute) }
 
-        // 根据是否在记账状态决定是否显示底部导航
-        val showBottomBar = !isRecording
+        // 标记是否显示报销统计界面（隐藏底部导航，支持手势返回）
+        var isReimbursement by remember { mutableStateOf(false) }
 
-        // 处理返回手势：在记账界面时，返回到 HomeScreen 而不是退出应用
-        BackHandler(enabled = isRecording) {
+        // 根据是否在记账状态或报销统计状态决定是否显示底部导航
+        val showBottomBar = !isRecording && !isReimbursement
+
+        // 处理返回手势：在记账界面或报销统计界面时，返回到 HomeScreen 而不是退出应用
+        BackHandler(enabled = isRecording || isReimbursement) {
             isRecording = false
+            isReimbursement = false
         }
 
         Scaffold(
@@ -161,16 +166,20 @@ class MainActivity : ComponentActivity() {
         ) { paddingValues ->
             // 使用 AnimatedContent 实现平滑的页面切换
             AnimatedContent(
-                targetState = if (isRecording) Screen.Record.route else currentRoute,
+                targetState = when {
+                    isRecording -> Screen.Record.route
+                    isReimbursement -> Screen.Reimbursement.route
+                    else -> currentRoute
+                },
                 transitionSpec = {
-                    // 判断是否为记账页面
-                    val isEnteringRecord = targetState == Screen.Record.route
-                    val isFromRecord = initialState == Screen.Record.route
+                    // 判断是否为特殊页面（记账或报销统计）
+                    val isEnteringSpecial = targetState == Screen.Record.route || targetState == Screen.Reimbursement.route
+                    val isFromSpecial = initialState == Screen.Record.route || initialState == Screen.Reimbursement.route
 
                     // 根据进入和离开的页面确定动画方向
                     val direction = when {
-                        isEnteringRecord -> 1 // 进入记账：从右向左滑入
-                        isFromRecord -> -1    // 离开记账：从左向右滑出
+                        isEnteringSpecial -> 1 // 进入特殊页面：从右向左滑入
+                        isFromSpecial -> -1    // 离开特殊页面：从左向右滑出
                         else -> {
                             // 普通页面切换：根据路由顺序判断方向
                             val targetIndex = Screen.navigationItems.indexOf(
@@ -186,8 +195,8 @@ class MainActivity : ComponentActivity() {
                     // 使用贝塞尔曲线实现平滑的缓动动画
                     val easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
 
-                    if (isEnteringRecord) {
-                        // 进入记账页面：从右侧滑入
+                    if (isEnteringSpecial) {
+                        // 进入特殊页面：从右侧滑入
                         slideInHorizontally(
                             initialOffsetX = { it },
                             animationSpec = tween(
@@ -212,8 +221,8 @@ class MainActivity : ComponentActivity() {
                                 easing = easing
                             )
                         )
-                    } else if (isFromRecord) {
-                        // 从记账页面返回：向右侧滑出
+                    } else if (isFromSpecial) {
+                        // 从特殊页面返回：向右侧滑出
                         slideInHorizontally(
                             initialOffsetX = { -it / 3 },
                             animationSpec = tween(
@@ -314,6 +323,9 @@ class MainActivity : ComponentActivity() {
                         onEditRecord = { record ->
                             viewModel.loadRecordForEdit(record)
                             isRecording = true
+                        },
+                        onNavigateToReimbursement = {
+                            isReimbursement = true
                         }
                     )
                     Screen.Bills.route -> BillsScreen(
@@ -335,6 +347,18 @@ class MainActivity : ComponentActivity() {
                         },
                         onNavigateBack = {
                             isRecording = false
+                        }
+                    )
+                    Screen.Reimbursement.route -> ReimbursementScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = {
+                            isReimbursement = false
+                        },
+                        onNavigateToRecord = { status ->
+                            viewModel.resetInput()
+                            viewModel.cancelEdit()
+                            viewModel.setReimburseStatus(status)
+                            isRecording = true
                         }
                     )
                     Screen.Settings.route -> SettingsScreen(

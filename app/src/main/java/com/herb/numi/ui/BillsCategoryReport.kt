@@ -11,6 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -146,6 +147,7 @@ private fun CategoryReportContent(
 /**
  * 带批注的饼图组件
  * 从圆心向外延伸标注线，标注线末端显示分类名称和百分比
+ * 支持深色主题适配
  */
 @Composable
 private fun CategoryPieChartWithAnnotations(
@@ -156,11 +158,8 @@ private fun CategoryPieChartWithAnnotations(
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
-    val textPaint = android.graphics.Paint().apply {
-        color = android.graphics.Color.GRAY
-        textAlign = android.graphics.Paint.Align.LEFT
-        isAntiAlias = true
-    }
+    val textColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val centerCircleColor = MaterialTheme.colorScheme.surface
 
     Canvas(modifier = modifier) {
         val centerX = size.width / 2
@@ -185,16 +184,19 @@ private fun CategoryPieChartWithAnnotations(
             val lineEndY = centerY + (radius * 1.3f) * sin(midAngle).toFloat()
 
             drawLine(
-                color = colors[index].copy(alpha = 0.6f),
+                color = colors[index].copy(alpha = 0.8f),
                 start = Offset(centerX, centerY),
                 end = Offset(lineEndX, lineEndY),
                 strokeWidth = 1.5f
             )
 
-            // 绘制批注文本
             val labelText = "${sortedData[index].key} ${String.format("%.1f", percentages[index])}%"
-            textPaint.textSize = with(density) { 12.sp.toPx() }
-            textPaint.color = android.graphics.Color.GRAY
+            val textPaint = android.graphics.Paint().apply {
+                color = textColor.toArgb()
+                textAlign = android.graphics.Paint.Align.LEFT
+                isAntiAlias = true
+                textSize = with(density) { 12.sp.toPx() }
+            }
 
             val textX = if (lineEndX > centerX) lineEndX + 4 else lineEndX - textPaint.measureText(labelText) - 4
             val textY = lineEndY + textPaint.textSize / 3
@@ -205,7 +207,7 @@ private fun CategoryPieChartWithAnnotations(
         }
 
         drawCircle(
-            color = Color.White,
+            color = centerCircleColor,
             radius = radius * 0.5f,
             center = Offset(centerX, centerY)
         )

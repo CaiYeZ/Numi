@@ -1,9 +1,11 @@
 package com.herb.numi.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -15,10 +17,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -262,7 +266,7 @@ private fun TimeSelectionSection(
 }
 
 /**
- * 数字选择器
+ * 可直接点击编辑的数字选择器
  */
 @Composable
 private fun NumberPicker(
@@ -271,6 +275,15 @@ private fun NumberPicker(
     onValueChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var isEditing by remember { mutableStateOf(false) }
+    var inputText by remember { mutableStateOf(value.toString()) }
+
+    LaunchedEffect(value) {
+        if (!isEditing) {
+            inputText = value.toString()
+        }
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -284,17 +297,64 @@ private fun NumberPicker(
         }
 
         Surface(
-            modifier = Modifier.width(60.dp),
+            modifier = Modifier
+                .width(60.dp)
+                .clickable { isEditing = true },
             color = MaterialTheme.colorScheme.surfaceVariant,
             shape = RoundedCornerShape(8.dp)
         ) {
-            Text(
-                text = String.format("%02d", value),
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                if (isEditing) {
+                    BasicTextField(
+                        value = inputText,
+                        onValueChange = { newText ->
+                            if (newText.isEmpty() || newText.all { it.isDigit() }) {
+                                inputText = newText
+                            }
+                        },
+                        textStyle = TextStyle(
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        singleLine = true,
+                        modifier = Modifier
+                            .width(52.dp)
+                            .focusable()
+                    )
+                } else {
+                    Text(
+                        text = String.format("%02d", value),
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        LaunchedEffect(isEditing) {
+            if (isEditing) {
+                delay(100)
+            }
+        }
+
+        DisposableEffect(isEditing) {
+            onDispose {
+                if (isEditing) {
+                    val newValue = inputText.toIntOrNull()
+                    if (newValue != null && newValue in range) {
+                        onValueChange(newValue)
+                    } else {
+                        inputText = value.toString()
+                    }
+                    isEditing = false
+                }
+            }
         }
 
         IconButton(

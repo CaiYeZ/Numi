@@ -37,7 +37,8 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
+            .padding(TopContentSpacing)
+            .padding(horizontal = 16.dp),
     ) {
         Text(
             text = "设置",
@@ -131,7 +132,7 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 InfoItem(label = "应用名称", value = "数笔")
-                InfoItem(label = "版本", value = "1.1.2")
+                InfoItem(label = "版本", value = "1.1.3")
                 InfoItem(label = "开发者", value = "Herb")
             }
         }

@@ -31,6 +31,7 @@ enum class Screen(
     Home("home", "首页", Icons.Default.Home),
     Bills("bills", "账单", Icons.Default.List),
     Record("record", "记账", Icons.Default.Home),
+    Reimbursement("reimbursement", "报销统计", Icons.Default.Home),
     Settings("settings", "设置", Icons.Default.Settings);
 
     companion object {

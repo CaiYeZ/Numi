@@ -72,4 +72,10 @@ interface RecordDao {
      */
     @Query("SELECT * FROM records ORDER BY createdAt ASC")
     suspend fun getAllRecordsForBackup(): List<Record>
+
+    /**
+     * 批量更新记录的报销状态
+     */
+    @Query("UPDATE records SET reimburseStatus = :status WHERE id IN (:ids)")
+    suspend fun updateReimburseStatusByIds(ids: List<Long>, status: String)
 }

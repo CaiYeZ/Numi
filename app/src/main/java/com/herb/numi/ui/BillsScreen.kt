@@ -49,8 +49,14 @@ fun BillsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
-            contentPadding = PaddingValues(16.dp),
+                .background(MaterialTheme.colorScheme.background)
+                .padding(bottom = paddingValues.calculateBottomPadding()),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = TopContentSpacing,
+                bottom = 16.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {

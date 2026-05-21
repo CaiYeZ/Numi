@@ -31,6 +31,7 @@ fun RecordScreen(
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val note by viewModel.note.collectAsState()
     val selectedTime by viewModel.selectedTime.collectAsState()
+    val reimburseStatus by viewModel.reimburseStatus.collectAsState()
     val editingRecordId by viewModel.editingRecordId.collectAsState()
     var showTimePicker by remember { mutableStateOf(false) }
 
@@ -46,13 +47,13 @@ fun RecordScreen(
             onBack = {
                 viewModel.cancelEdit()
                 onNavigateBack()
-            }
+            },
+            modifier = Modifier.padding(top = TopContentSpacing - 8.dp)
         )
 
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(modifier = Modifier.height(0.dp)) // 顶部导航栏 与 Tabs 间隔
@@ -86,9 +87,11 @@ fun RecordScreen(
             amount = amount,
             note = note,
             selectedTime = selectedTime,
+            reimburseStatus = reimburseStatus,
             isEditingMode = isEditingMode,
             onNoteChange = { viewModel.setNote(it) },
             onShowTimePicker = { showTimePicker = true },
+            onReimburseStatusChange = { viewModel.setReimburseStatus(it) },
             onNumberClick = { viewModel.appendNumber(it) },
             onDeleteClick = { viewModel.deleteLastChar() },
             onSaveClick = {

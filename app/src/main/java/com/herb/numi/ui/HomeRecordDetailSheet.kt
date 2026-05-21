@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.herb.numi.data.Record
+import com.herb.numi.data.ReimburseStatus
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -62,10 +63,12 @@ fun RecordDetailBottomSheet(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
                     DetailAmountRow(record = record)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f)) // 分割线
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f))
                     DetailCategoryRow(category = record.category)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f))
-                    DetailTimeRow(timestamp = record.createdAt)
+                    DetailTimeRow(record = record)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f))
+                    DetailReimburseStatusRow(reimburseStatus = record.reimburseStatus)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f))
                     DetailNoteRow(note = record.note)
                 }
@@ -94,7 +97,7 @@ private fun DetailSheetHeader(
             text = "详细",
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurface
         )
 
         Row(
@@ -158,7 +161,7 @@ private fun DetailAmountRow(
         Text(
             text = "金额",
             fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = "${if (record.type == "expense") "-" else "+"}¥${String.format("%.2f", record.amount)}",
@@ -204,15 +207,18 @@ private fun DetailCategoryRow(
 
 /**
  * 时间行
+ * 第一行显示最新更新时间，第二行显示创建时间
+ * 若更新时间等于创建时间，则不显示第二行
  */
 @Composable
 private fun DetailTimeRow(
-    timestamp: Long,
+    record: Record,
     modifier: Modifier = Modifier
 ) {
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-    val mainTime = dateFormat.format(Date(timestamp))
-
+    val updatedTime = dateFormat.format(Date(record.updatedAt))
+    val createdTime = dateFormat.format(Date(record.createdAt))
+    val hasBeenUpdated = record.updatedAt != record.createdAt
 
     Row(
         modifier = modifier
@@ -224,24 +230,58 @@ private fun DetailTimeRow(
         Text(
             text = "时间",
             fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurface
         )
         Column(
             horizontalAlignment = Alignment.End
         ) {
             Text(
-                text = mainTime,
+                text = updatedTime,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Text(
-                text = "记录于$mainTime",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp)
-            )
+            if (hasBeenUpdated) {
+                Text(
+                    text = "记录于$createdTime",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
         }
+    }
+}
+
+
+/**
+ * 报销状态行
+ */
+@Composable
+private fun DetailReimburseStatusRow(
+    reimburseStatus: String,
+    modifier: Modifier = Modifier
+) {
+    val status = ReimburseStatus.fromValue(reimburseStatus)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "报销",
+            fontSize = 16.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = status.label,
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End
+        )
     }
 }
 
@@ -263,12 +303,12 @@ private fun DetailNoteRow(
         Text(
             text = "备注",
             fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = note ?: "",
             fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.End
         )
     }

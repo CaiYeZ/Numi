@@ -38,6 +38,7 @@ import com.herb.numi.data.CategoryIcon
 import com.herb.numi.data.ExpenseCategory
 import com.herb.numi.data.IncomeCategory
 import com.herb.numi.data.Record
+import com.herb.numi.data.ReimburseStatus
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -174,7 +175,7 @@ fun HomeRecordItem(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
             HomeRecordItemLeftContent(
                 record = record,
@@ -355,19 +356,35 @@ private fun RecordExactTime(
 }
 
 /**
- * 记录项右侧内容（金额）
+ * 记录项右侧内容（金额 + 报销状态）
  */
 @Composable
 private fun HomeRecordItemRightContent(
     record: Record,
     modifier: Modifier = Modifier
 ) {
-    Text(
-        text = "${if (record.type == "expense") "-" else "+"}${String.format("%.2f", record.amount)}",
-        fontSize = 15.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = if (record.type == "expense") MaterialTheme.colorScheme.error
-        else MaterialTheme.colorScheme.primary,
-        modifier = modifier
-    )
+    val status = ReimburseStatus.fromValue(record.reimburseStatus)
+    val showStatus = status != ReimburseStatus.NONE
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.Top
+    ) {
+        Text(
+            text = "${if (record.type == "expense") "-" else "+"}${String.format("%.2f", record.amount)}",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (record.type == "expense") MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.primary
+        )
+        if (showStatus) {
+            Text(
+                text = status.label,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+            )
+        }
+    }
 }

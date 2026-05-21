@@ -56,4 +56,9 @@ interface RecordRepositoryInterface {
      * 获取所有记录用于数据备份
      */
     suspend fun getAllRecordsForBackup(): List<Record>
+
+    /**
+     * 批量更新记录的报销状态
+     */
+    suspend fun updateRecordsReimburseStatus(ids: List<Long>, status: String)
 }

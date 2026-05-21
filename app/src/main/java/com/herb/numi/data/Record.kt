@@ -13,6 +13,8 @@ import androidx.room.PrimaryKey
  * @param category 分类名称
  * @param note 备注，可选
  * @param createdAt 创建时间戳
+ * @param updatedAt 最新更新时间戳，默认与创建时间一致
+ * @param reimburseStatus 报销状态：none（非报销）、pending（待报销）、reimbursed（已报销）
  */
 @Entity(tableName = "records")
 data class Record(
@@ -22,5 +24,7 @@ data class Record(
     val type: String,      // "income" or "expense"
     val category: String,
     val note: String? = null,
-    val createdAt: Long    // 时间戳（支持映射为"今天"或"昨天"）
+    val createdAt: Long,   // 时间戳（支持映射为"今天"或"昨天"）
+    val updatedAt: Long = createdAt,  // 最新更新时间戳
+    val reimburseStatus: String = "none"  // none, pending, reimbursed
 )
