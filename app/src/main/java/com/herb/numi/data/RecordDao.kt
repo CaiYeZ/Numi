@@ -78,4 +78,22 @@ interface RecordDao {
      */
     @Query("UPDATE records SET reimburseStatus = :status WHERE id IN (:ids)")
     suspend fun updateReimburseStatusByIds(ids: List<Long>, status: String)
+
+    /**
+     * 批量插入记录
+     */
+    @Insert
+    suspend fun insertAll(records: List<Record>)
+
+    /**
+     * 删除所有记录
+     */
+    @Query("DELETE FROM records")
+    suspend fun deleteAll()
+
+    /**
+     * 检查记录是否已存在（基于金额、类型、分类、创建时间）
+     */
+    @Query("SELECT COUNT(*) FROM records WHERE amount = :amount AND type = :type AND category = :category AND createdAt = :createdAt")
+    suspend fun recordExists(amount: Double, type: String, category: String, createdAt: Long): Int
 }

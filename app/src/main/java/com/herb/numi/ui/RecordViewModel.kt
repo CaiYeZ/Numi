@@ -1,10 +1,17 @@
 package com.herb.numi.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.herb.numi.data.CustomCategory
+import com.herb.numi.data.CustomCategoryRepositoryInterface
 import com.herb.numi.data.Record
 import com.herb.numi.data.RecordRepositoryInterface
+import com.herb.numi.data.`import`.CsvImporter
+import com.herb.numi.data.`import`.ImportResult
+import com.herb.numi.ui.common.OperationResult
+import com.herb.numi.ui.common.UiEvent
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.*
@@ -14,16 +21,13 @@ import java.util.*
  * 负责管理记账界面的状态和数据
  *
  * 遵循单一职责原则：只负责记账业务逻辑，不处理 UI 渲染
- * 遵循依赖注入原则：通过 Application 接收 Repository 接口实例
+ * 遵循依赖注入原则：Repository 通过构造函数传入
  */
-class RecordViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val repository: RecordRepositoryInterface
-
-    init {
-        val numiApp = application as com.herb.numi.NumiApplication
-        repository = numiApp.repository
-    }
+class RecordViewModel(
+    application: Application,
+    private val repository: RecordRepositoryInterface,
+    private val customCategoryRepository: CustomCategoryRepositoryInterface
+) : AndroidViewModel(application) {
 
     // 金额输入状态
     private val _amount = MutableStateFlow("")
@@ -56,8 +60,77 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
     private val _themeMode = MutableStateFlow("system")
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
 
+    // 删除操作状态
+    private val _deleteOperationResult = MutableStateFlow<OperationResult<Int>>(OperationResult.Idle)
+    val deleteOperationResult: StateFlow<OperationResult<Int>> = _deleteOperationResult.asStateFlow()
+
+    // 操作提示事件（一次性事件，避免重复消费）
+    private val _operationMessageEvent = MutableStateFlow<UiEvent<String>?>(null)
+    val operationMessageEvent: StateFlow<UiEvent<String>?> = _operationMessageEvent.asStateFlow()
+
+    // 自定义分类列表
+    private val _customCategories = MutableStateFlow<List<CustomCategory>>(emptyList())
+    val customCategories: StateFlow<List<CustomCategory>> = _customCategories.asStateFlow()
+
+    // 是否显示添加自定义分类对话框
+    private val _showAddCustomCategoryDialog = MutableStateFlow(false)
+    val showAddCustomCategoryDialog: StateFlow<Boolean> = _showAddCustomCategoryDialog.asStateFlow()
+
     init {
         _themeMode.value = (application as com.herb.numi.NumiApplication).getThemeMode()
+        loadCustomCategories()
+    }
+
+    /**
+     * 加载自定义分类
+     */
+    private fun loadCustomCategories() {
+        viewModelScope.launch {
+            customCategoryRepository.getAllCategories().collect { categories ->
+                _customCategories.value = categories
+            }
+        }
+    }
+
+    /**
+     * 获取指定类型的自定义分类
+     */
+    fun getCustomCategoriesByType(type: String): List<CustomCategory> {
+        return _customCategories.value.filter { it.type == type }
+    }
+
+    /**
+     * 显示添加分类对话框
+     */
+    fun showAddCategoryDialog() {
+        _showAddCustomCategoryDialog.value = true
+    }
+
+    /**
+     * 隐藏添加分类对话框
+     */
+    fun hideAddCategoryDialog() {
+        _showAddCustomCategoryDialog.value = false
+    }
+
+    /**
+     * 添加自定义分类
+     */
+    fun addCustomCategory(name: String, icon: com.herb.numi.data.CategoryIcon, type: String) {
+        viewModelScope.launch {
+            val category = CustomCategory(name = name, icon = icon, type = type)
+            customCategoryRepository.insertCategory(category)
+            hideAddCategoryDialog()
+        }
+    }
+
+    /**
+     * 删除自定义分类
+     */
+    fun deleteCustomCategory(category: CustomCategory) {
+        viewModelScope.launch {
+            customCategoryRepository.deleteCategory(category)
+        }
     }
 
     fun setThemeMode(mode: String) {
@@ -103,13 +176,6 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
         if (_amount.value.isNotEmpty()) {
             _amount.value = _amount.value.dropLast(1)
         }
-    }
-
-    /**
-     * 清空金额
-     */
-    fun clearAmount() {
-        _amount.value = ""
     }
 
     /**
@@ -161,13 +227,17 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * 保存记录（从当前输入状态）
+     * 时间戳秒和毫秒清零，只保留到分钟精度
      */
     fun saveRecord(onSuccess: () -> Unit) {
         val amountValue = _amount.value.toDoubleOrNull() ?: return
         if (amountValue <= 0) return
 
         viewModelScope.launch {
-            val currentTime = _selectedTime.value.timeInMillis
+            val currentTime = _selectedTime.value.apply {
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
             val record = Record(
                 amount = amountValue,
                 type = _recordType.value,
@@ -202,21 +272,65 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * 删除记录
+     * 带操作状态管理和结果反馈
+     *
+     * @param record 要删除的记录
+     * @param onComplete 完成回调（无论成功与否都会调用）
      */
-    fun deleteRecord(record: Record) {
+    fun deleteRecord(record: Record, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
-            repository.deleteRecord(record)
+            _deleteOperationResult.value = OperationResult.Loading
+            try {
+                repository.deleteRecord(record)
+                _deleteOperationResult.value = OperationResult.Success(message = "记录已删除")
+                _operationMessageEvent.value = UiEvent("记录已删除")
+            } catch (e: Exception) {
+                _deleteOperationResult.value = OperationResult.Error(message = "删除失败：${e.message}")
+                _operationMessageEvent.value = UiEvent("删除失败，请重试")
+            } finally {
+                onComplete()
+            }
         }
     }
 
     /**
      * 批量删除记录
+     * 带操作状态管理和结果反馈
+     *
+     * @param ids 要删除的记录ID列表
+     * @param onComplete 完成回调（无论成功与否都会调用，参数为实际删除数量）
      */
-    fun deleteRecordsByIds(ids: List<Long>, onSuccess: () -> Unit = {}) {
+    fun deleteRecordsByIds(ids: List<Long>, onComplete: (Int) -> Unit = {}) {
         viewModelScope.launch {
-            repository.deleteRecordsByIds(ids)
-            onSuccess()
+            _deleteOperationResult.value = OperationResult.Loading
+            try {
+                val count = ids.size
+                repository.deleteRecordsByIds(ids)
+                _deleteOperationResult.value = OperationResult.Success(data = count, message = "已删除 $count 条记录")
+                _operationMessageEvent.value = UiEvent("已删除 $count 条记录")
+                onComplete(count)
+            } catch (e: Exception) {
+                _deleteOperationResult.value = OperationResult.Error(message = "批量删除失败：${e.message}")
+                _operationMessageEvent.value = UiEvent("批量删除失败，请重试")
+                onComplete(0)
+            }
         }
+    }
+
+    /**
+     * 重置删除操作状态为空闲
+     * 在UI消费完结果后调用
+     */
+    fun resetDeleteOperationResult() {
+        _deleteOperationResult.value = OperationResult.Idle
+    }
+
+    /**
+     * 消费操作消息事件
+     * 返回事件内容并标记为已消费
+     */
+    fun consumeOperationMessageEvent(): String? {
+        return _operationMessageEvent.value?.getContentIfNotHandled()
     }
 
     /**
@@ -236,16 +350,25 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * 更新记录
+     * 时间戳秒和毫秒清零，只保留到分钟精度
      */
     fun updateRecord(record: Record, onSuccess: () -> Unit) {
         viewModelScope.launch {
+            val selectedTime = _selectedTime.value.apply {
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            val updatedTime = Calendar.getInstance().apply {
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
             val updatedRecord = record.copy(
                 amount = _amount.value.toDoubleOrNull() ?: record.amount,
                 type = _recordType.value,
                 category = _selectedCategory.value,
                 note = _note.value.ifEmpty { null },
-                createdAt = _selectedTime.value.timeInMillis,
-                updatedAt = System.currentTimeMillis(),
+                createdAt = selectedTime,
+                updatedAt = updatedTime,
                 reimburseStatus = _reimburseStatus.value
             )
             repository.updateRecord(updatedRecord)
@@ -306,5 +429,64 @@ class RecordViewModel(application: Application) : AndroidViewModel(application) 
         val end = calendar.timeInMillis
 
         return Pair(start, end)
+    }
+
+    /**
+     * 从CSV内容导入数据
+     * 解析CSV内容并批量插入记录和自定义分类
+     * 自动跳过已存在的记录（基于金额、类型、分类、创建时间判断重复）
+     *
+     * @param csvContent CSV格式字符串
+     * @return 导入结果
+     */
+    suspend fun importFromCsv(csvContent: String): ImportResult {
+        val parseResult = CsvImporter.import(csvContent)
+        val records = CsvImporter.getLastImportedRecords()
+        val categories = CsvImporter.getLastImportedCategories()
+
+        return when (parseResult) {
+            is ImportResult.Success, is ImportResult.Partial -> {
+                var newRecordCount = 0
+                var duplicateCount = 0
+
+                if (records.isNotEmpty()) {
+                    newRecordCount = repository.importRecordsWithDeduplication(records)
+                    duplicateCount = records.size - newRecordCount
+                }
+
+                if (categories.isNotEmpty()) {
+                    customCategoryRepository.importCategoriesWithDeduplication(categories)
+                }
+
+                if (duplicateCount > 0) {
+                    ImportResult.Success(
+                        recordCount = records.size,
+                        newRecordCount = newRecordCount,
+                        duplicateCount = duplicateCount,
+                        categoryCount = categories.size
+                    )
+                } else {
+                    ImportResult.Success(
+                        recordCount = records.size,
+                        newRecordCount = newRecordCount,
+                        duplicateCount = 0,
+                        categoryCount = categories.size
+                    )
+                }
+            }
+            is ImportResult.Error -> parseResult
+            is ImportResult.Empty -> parseResult
+        }
+    }
+
+    /**
+     * 清空所有数据
+     * 删除所有记录和自定义分类
+     */
+    fun clearAllData() {
+        viewModelScope.launch {
+            repository.clearAllData()
+            _operationMessageEvent.value = UiEvent("所有数据已清空")
+        }
     }
 }

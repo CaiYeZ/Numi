@@ -10,7 +10,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
@@ -18,18 +17,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.herb.numi.data.Record
 import com.herb.numi.data.ReimburseStatus
+import com.herb.numi.data.Record as NumiRecord
+import com.herb.numi.data.`import`.CsvImporter
+import com.herb.numi.data.`import`.ImportResult
 import com.herb.numi.data.export.BillExportManager
 import com.herb.numi.data.export.ExportResult
+import com.herb.numi.ui.BillsDetailScreen
 import com.herb.numi.ui.BillsScreen
 import com.herb.numi.ui.HomeScreen
 import com.herb.numi.ui.RecordScreen
 import com.herb.numi.ui.RecordViewModel
+import com.herb.numi.ui.RecordViewModelFactory
 import com.herb.numi.ui.ReimbursementScreen
 import com.herb.numi.ui.SettingsScreen
 import com.herb.numi.ui.navigation.BottomNavigationBar
 import com.herb.numi.ui.navigation.Screen
+import com.herb.numi.ui.pageTransitionSpec
 import com.herb.numi.ui.theme.NumiTheme
 import kotlinx.coroutines.launch
 
@@ -45,7 +49,12 @@ class MainActivity : ComponentActivity() {
      * 待导出的记录列表缓存
      * 用于在SAF选择器返回后执行导出
      */
-    private var pendingExportRecords: List<Record>? = null
+    private var pendingExportRecords: List<NumiRecord>? = null
+
+    /**
+     * 待导出的自定义分类列表缓存
+     */
+    private var pendingExportCategories: List<com.herb.numi.data.CustomCategory>? = null
 
     /**
      * 系统文件保存器（SAF）回调
@@ -55,15 +64,18 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri: Uri? ->
         val records = pendingExportRecords
+        val categories = pendingExportCategories
         pendingExportRecords = null
+        pendingExportCategories = null
 
         if (uri == null || records == null) {
             return@registerForActivityResult
         }
 
         lifecycleScope.launch {
-            val result = billExportManager.exportToCsv(
+            val result = billExportManager.exportToCsvWithCategories(
                 records = records,
+                customCategories = categories ?: emptyList(),
                 uri = uri,
                 customFileName = billExportManager.generateDefaultFileName()
             )
@@ -94,14 +106,75 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 系统文件选择器（SAF）回调
+     * 用户选择CSV文件后触发导入
+     */
+    private val openDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@registerForActivityResult
+
+        lifecycleScope.launch {
+            try {
+                val csvContent = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: return@launch
+
+                val numiApp = application as NumiApplication
+                val viewModelFactory = RecordViewModelFactory(numiApp, numiApp.repository, numiApp.customCategoryRepository)
+                val viewModel = androidx.lifecycle.ViewModelProvider(this@MainActivity, viewModelFactory)[RecordViewModel::class.java]
+
+                lifecycleScope.launch {
+                    val result = viewModel.importFromCsv(csvContent)
+
+                    when (result) {
+                        is ImportResult.Success -> {
+                            val msg = buildString {
+                                if (result.duplicateCount > 0) {
+                                    append("导入完成：新增 ${result.newRecordCount} 条记录")
+                                    append("，跳过 ${result.duplicateCount} 条重复记录")
+                                } else {
+                                    append("成功导入 ${result.newRecordCount} 条记录")
+                                }
+                                if (result.categoryCount > 0) {
+                                    append("和 ${result.categoryCount} 个分类")
+                                }
+                            }
+                            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                        }
+                        is ImportResult.Partial -> {
+                            val msg = buildString {
+                                append("部分导入：${result.newRecordCount} 条记录")
+                                if (result.categoryCount > 0) append("，${result.categoryCount} 个分类")
+                                if (result.skippedRows > 0) append("，跳过 ${result.skippedRows} 行")
+                            }
+                            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                        }
+                        is ImportResult.Error -> {
+                            Toast.makeText(this@MainActivity, "导入失败：${result.message}", Toast.LENGTH_LONG).show()
+                        }
+                        is ImportResult.Empty -> {
+                            Toast.makeText(this@MainActivity, "导入文件为空", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "导入失败：${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         billExportManager = BillExportManager(this)
 
+        val numiApp = application as NumiApplication
+        val viewModelFactory = RecordViewModelFactory(numiApp, numiApp.repository, numiApp.customCategoryRepository)
+
         setContent {
-            val viewModel: RecordViewModel = viewModel()
+            val viewModel: RecordViewModel = viewModel(factory = viewModelFactory)
             val themeMode by viewModel.themeMode.collectAsState()
 
             val isDarkTheme = when (themeMode) {
@@ -143,9 +216,15 @@ class MainActivity : ComponentActivity() {
         var shouldReturnToReimbursementAfterRecord by remember { mutableStateOf(false) }
         // 报销页底部 FAB 记账时使用当前 Tab 对应的报销状态
         var reimbursementRecordStatus by remember { mutableStateOf(ReimburseStatus.PENDING.value) }
+        // 报销页批量管理模式状态
+        var isReimbursementBatchMode by remember { mutableStateOf(false) }
 
-        // 记账页全屏展示；报销统计页保留底部导航和 FAB
-        val showBottomBar = !isRecording
+        // 账单明细界面状态
+        var isBillsDetail by remember { mutableStateOf(false) }
+        var billsDetailReturnRoute by remember { mutableStateOf(Screen.Home.route) }
+
+        // 记账页全屏展示；报销统计页批量模式或账单明细批量模式下隐藏底部导航和 FAB
+        val showBottomBar = !isRecording && !((isReimbursement || isBillsDetail) && isReimbursementBatchMode)
 
         fun leaveReimbursement() {
             isReimbursement = false
@@ -160,12 +239,15 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // 处理外层返回：记账页优先回到来源页，报销页回到进入前的底部页面
-        BackHandler(enabled = isRecording || isReimbursement) {
+        // 处理外层返回：记账页优先回到来源页，报销页/账单明细页回到进入前的底部页面
+        BackHandler(enabled = isRecording || isReimbursement || isBillsDetail) {
             if (isRecording) {
                 finishRecord()
             } else if (isReimbursement) {
                 leaveReimbursement()
+            } else if (isBillsDetail) {
+                isBillsDetail = false
+                currentRoute = billsDetailReturnRoute
             }
         }
 
@@ -177,6 +259,9 @@ class MainActivity : ComponentActivity() {
                         onNavigate = { route ->
                             if (isReimbursement) {
                                 isReimbursement = false
+                            }
+                            if (isBillsDetail) {
+                                isBillsDetail = false
                             }
                             previousRoute = currentRoute
                             currentRoute = route
@@ -199,144 +284,10 @@ class MainActivity : ComponentActivity() {
                 targetState = when {
                     isRecording -> Screen.Record.route
                     isReimbursement -> Screen.Reimbursement.route
+                    isBillsDetail -> Screen.BillsDetail.route
                     else -> currentRoute
                 },
-                transitionSpec = {
-                    // 判断是否为特殊页面（记账或报销统计）
-                    val isEnteringSpecial = targetState == Screen.Record.route || targetState == Screen.Reimbursement.route
-                    val isFromSpecial = initialState == Screen.Record.route || initialState == Screen.Reimbursement.route
-
-                    // 根据进入和离开的页面确定动画方向
-                    val direction = when {
-                        isEnteringSpecial -> 1 // 进入特殊页面：从右向左滑入
-                        isFromSpecial -> -1    // 离开特殊页面：从左向右滑出
-                        else -> {
-                            // 普通页面切换：根据路由顺序判断方向
-                            val targetIndex = Screen.navigationItems.indexOf(
-                                Screen.navigationItems.find { it.route == targetState }
-                            )
-                            val initialIndex = Screen.navigationItems.indexOf(
-                                Screen.navigationItems.find { it.route == initialState }
-                            )
-                            if (targetIndex >= initialIndex) 1 else -1
-                        }
-                    }
-
-                    // 使用贝塞尔曲线实现平滑的缓动动画
-                    val easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
-
-                    if (isEnteringSpecial) {
-                        // 进入特殊页面：从右侧滑入
-                        slideInHorizontally(
-                            initialOffsetX = { it },
-                            animationSpec = tween(
-                                durationMillis = 350,
-                                easing = easing
-                            )
-                        ) + fadeIn(
-                            animationSpec = tween(
-                                durationMillis = 350,
-                                easing = easing
-                            )
-                        ) togetherWith
-                        slideOutHorizontally(
-                            targetOffsetX = { -it / 3 },
-                            animationSpec = tween(
-                                durationMillis = 350,
-                                easing = easing
-                            )
-                        ) + fadeOut(
-                            animationSpec = tween(
-                                durationMillis = 350,
-                                easing = easing
-                            )
-                        )
-                    } else if (isFromSpecial) {
-                        // 从特殊页面返回：向右侧滑出
-                        slideInHorizontally(
-                            initialOffsetX = { -it / 3 },
-                            animationSpec = tween(
-                                durationMillis = 350,
-                                easing = easing
-                            )
-                        ) + fadeIn(
-                            animationSpec = tween(
-                                durationMillis = 350,
-                                easing = easing
-                            )
-                        ) togetherWith
-                        slideOutHorizontally(
-                            targetOffsetX = { it },
-                            animationSpec = tween(
-                                durationMillis = 350,
-                                easing = easing
-                            )
-                        ) + fadeOut(
-                            animationSpec = tween(
-                                durationMillis = 350,
-                                easing = easing
-                            )
-                        )
-                    } else {
-                        // 普通页面切换：左右滑动
-                        (if (direction > 0) {
-                            // 向右滑动（进入右侧页面）
-                            slideInHorizontally(
-                                initialOffsetX = { it },
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = easing
-                                )
-                            ) + fadeIn(
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = easing
-                                )
-                            )
-                        } else {
-                            // 向左滑动（进入左侧页面）
-                            slideInHorizontally(
-                                initialOffsetX = { -it },
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = easing
-                                )
-                            ) + fadeIn(
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = easing
-                                )
-                            )
-                        }) togetherWith
-                        (if (direction > 0) {
-                            slideOutHorizontally(
-                                targetOffsetX = { -it },
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = easing
-                                )
-                            ) + fadeOut(
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = easing
-                                )
-                            )
-                        } else {
-                            slideOutHorizontally(
-                                targetOffsetX = { it },
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = easing
-                                )
-                            ) + fadeOut(
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = easing
-                                )
-                            )
-                        })
-                    }
-                },
+                transitionSpec = { pageTransitionSpec() },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
@@ -351,14 +302,20 @@ class MainActivity : ComponentActivity() {
                             shouldReturnToReimbursementAfterRecord = false
                             isRecording = true
                         },
-                        onEditRecord = { record ->
+                        onEditRecord = { record: NumiRecord ->
                             viewModel.loadRecordForEdit(record)
                             shouldReturnToReimbursementAfterRecord = false
                             isRecording = true
                         },
                         onNavigateToReimbursement = {
                             reimbursementReturnRoute = currentRoute
+                            currentRoute = "" // 清空路由，使底部导航栏无选中状态
                             isReimbursement = true
+                        },
+                        onNavigateToBillsDetail = {
+                            billsDetailReturnRoute = currentRoute
+                            currentRoute = "" // 清空路由，使底部导航栏无选中状态
+                            isBillsDetail = true
                         }
                     )
                     Screen.Bills.route -> BillsScreen(
@@ -369,7 +326,7 @@ class MainActivity : ComponentActivity() {
                             shouldReturnToReimbursementAfterRecord = false
                             isRecording = true
                         },
-                        onEditRecord = { record ->
+                        onEditRecord = { record: NumiRecord ->
                             viewModel.loadRecordForEdit(record)
                             shouldReturnToReimbursementAfterRecord = false
                             isRecording = true
@@ -391,11 +348,33 @@ class MainActivity : ComponentActivity() {
                         },
                         onRecordStatusPresetChange = { status ->
                             reimbursementRecordStatus = status
+                        },
+                        onEditRecord = { record ->
+                            viewModel.loadRecordForEdit(record)
+                            isReimbursement = false
+                            shouldReturnToReimbursementAfterRecord = true
+                            isRecording = true
+                        },
+                        onBatchModeChange = { isBatchMode ->
+                            isReimbursementBatchMode = isBatchMode
+                        }
+                    )
+                    Screen.BillsDetail.route -> BillsDetailScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = {
+                            isBillsDetail = false
+                            currentRoute = billsDetailReturnRoute
+                        },
+                        onEditRecord = { record ->
+                            viewModel.loadRecordForEdit(record)
+                            isBillsDetail = false
+                            isRecording = true
                         }
                     )
                     Screen.Settings.route -> SettingsScreen(
                         viewModel = viewModel,
-                        onExportBills = { records -> launchExportFlow(records) },
+                        onExportBills = { records -> launchExportFlow(records, viewModel.customCategories.value) },
+                        onImportBills = { launchImportFlow() },
                         themeMode = viewModel.themeMode.value,
                         onThemeChange = { viewModel.setThemeMode(it) }
                     )
@@ -411,16 +390,26 @@ class MainActivity : ComponentActivity() {
      * 3. 在回调中执行实际导出
      *
      * @param records 待导出的账单记录列表
+     * @param customCategories 待导出的自定义分类列表
      */
-    private fun launchExportFlow(records: List<Record>) {
+    private fun launchExportFlow(records: List<NumiRecord>, customCategories: List<com.herb.numi.data.CustomCategory> = emptyList()) {
         if (records.isEmpty()) {
             Toast.makeText(this, "暂无账单数据可导出", Toast.LENGTH_SHORT).show()
             return
         }
 
         pendingExportRecords = records
+        pendingExportCategories = customCategories
 
         val defaultFileName = billExportManager.generateDefaultFileName()
         createDocumentLauncher.launch(defaultFileName)
+    }
+
+    /**
+     * 启动导入流程
+     * 打开SAF文件选择器让用户选择CSV文件
+     */
+    private fun launchImportFlow() {
+        openDocumentLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*"))
     }
 }

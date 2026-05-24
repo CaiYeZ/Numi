@@ -2,8 +2,6 @@ package com.herb.numi.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -12,6 +10,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.herb.numi.data.CategoryIcon
+import com.herb.numi.data.CustomCategory
+import com.herb.numi.data.ExpenseCategory
+import com.herb.numi.data.IncomeCategory
 
 /**
  * 记账页面主入口
@@ -33,6 +35,8 @@ fun RecordScreen(
     val selectedTime by viewModel.selectedTime.collectAsState()
     val reimburseStatus by viewModel.reimburseStatus.collectAsState()
     val editingRecordId by viewModel.editingRecordId.collectAsState()
+    val customCategories by viewModel.customCategories.collectAsState()
+    val showAddCategoryDialog by viewModel.showAddCustomCategoryDialog.collectAsState()
     var showTimePicker by remember { mutableStateOf(false) }
 
     val isEditingMode = editingRecordId != null
@@ -62,21 +66,31 @@ fun RecordScreen(
                 onTypeChange = { viewModel.setRecordType(it) }
             ) { page ->
                 val type = if (page == 0) "expense" else "income"
+                // 解析当前选中的类别图标（支持预设分类和自定义分类）
+                val categoryIcon = resolveCategoryIcon(
+                    selectedCategory = selectedCategory,
+                    recordType = recordType,
+                    customCategories = customCategories
+                )
                 Column {
                     Spacer(modifier = Modifier.height(8.dp)) // Tabs 与 金额显示区 间隔
                     RecordTransactionOverview(
-                        category = if (selectedCategory.isEmpty()) 
-                            (if (type == "expense") "支出" else "收入") 
+                        category = if (selectedCategory.isEmpty())
+                            (if (type == "expense") "支出" else "收入")
                             else selectedCategory,
                         amount = amount,
-                        recordType = type
+                        recordType = recordType,
+                        categoryIcon = categoryIcon
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
                     RecordCategorySelector(
                         selectedType = type,
                         selectedCategory = if (recordType == type) selectedCategory else "",
-                        onCategoryChange = { viewModel.selectCategory(it) }
+                        onCategoryChange = { viewModel.selectCategory(it) },
+                        customCategories = customCategories,
+                        onAddCustomCategory = { viewModel.showAddCategoryDialog() },
+                        onDeleteCustomCategory = { viewModel.deleteCustomCategory(it) }
                     )
                 }
             }
@@ -125,6 +139,44 @@ fun RecordScreen(
             onDismiss = { showTimePicker = false }
         )
     }
+
+    if (showAddCategoryDialog) {
+        AddCustomCategoryDialog(
+            recordType = recordType,
+            onConfirm = { name, icon ->
+                viewModel.addCustomCategory(name, icon, recordType)
+            },
+            onDismiss = { viewModel.hideAddCategoryDialog() }
+        )
+    }
+}
+
+/**
+ * 根据选中的类别名称解析对应的图标枚举
+ * 优先从预设分类中查找，找不到则从自定义分类中查找
+ */
+private fun resolveCategoryIcon(
+    selectedCategory: String,
+    recordType: String,
+    customCategories: List<CustomCategory>
+): CategoryIcon {
+    if (selectedCategory.isEmpty()) {
+        return CategoryIcon.MORE_HORIZ
+    }
+    // 先从预设分类中查找
+    val presetIcon = if (recordType == "expense") {
+        ExpenseCategory.icons[selectedCategory]
+    } else {
+        IncomeCategory.icons[selectedCategory]
+    }
+    if (presetIcon != null) {
+        return presetIcon
+    }
+    // 再从自定义分类中查找
+    return customCategories
+        .find { it.name == selectedCategory && it.type == recordType }
+        ?.icon
+        ?: CategoryIcon.MORE_HORIZ
 }
 
 /**

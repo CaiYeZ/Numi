@@ -148,7 +148,7 @@ private fun NumberKeyboardLayout(
                 contentColor = textColor
             )
             if (isEditingMode) {
-                TextButton(
+                KeyboardTextButton(
                     text = "取消",
                     onClick = onReRecordClick,
                     modifier = Modifier.weight(1f),
@@ -157,7 +157,7 @@ private fun NumberKeyboardLayout(
                     contentColor = textColor
                 )
             } else {
-                TextButton(
+                KeyboardTextButton(
                     text = "再记",
                     onClick = onReRecordClick,
                     modifier = Modifier.weight(1f),
@@ -311,7 +311,7 @@ private fun DeleteButton(
  * 文字按钮（再记/取消）
  */
 @Composable
-private fun TextButton(
+private fun KeyboardTextButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,

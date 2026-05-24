@@ -10,17 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.CardGiftcard
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LocalConvenienceStore
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Restaurant
-import androidx.compose.material.icons.filled.ShoppingBag
-import androidx.compose.material.icons.filled.SportsEsports
-import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,10 +25,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.herb.numi.data.CategoryIcon
+import com.herb.numi.data.CustomCategory
 import com.herb.numi.data.ExpenseCategory
 import com.herb.numi.data.IncomeCategory
 import com.herb.numi.data.Record
 import com.herb.numi.data.ReimburseStatus
+import com.herb.numi.data.imageVector
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -52,6 +44,7 @@ import java.util.*
  * @param selectedIds 已选中的记录ID集合
  * @param onRecordClick 记录点击回调
  * @param onRecordLongClick 记录长按回调
+ * @param customCategories 自定义分类列表，用于解析自定义分类的图标
  * @param modifier Modifier
  */
 @Composable
@@ -62,6 +55,7 @@ fun HomeRecordDayCard(
     selectedIds: Set<Long>,
     onRecordClick: (Record) -> Unit,
     onRecordLongClick: (Record) -> Unit,
+    customCategories: List<CustomCategory> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val dayIncome = records.filter { it.type == "income" }.sumOf { it.amount }
@@ -127,7 +121,8 @@ fun HomeRecordDayCard(
                     isSelectionMode = isSelectionMode,
                     isSelected = selectedIds.contains(record.id),
                     onClick = { onRecordClick(record) },
-                    onLongClick = { onRecordLongClick(record) }
+                    onLongClick = { onRecordLongClick(record) },
+                    customCategories = customCategories
                 )
             }
         }
@@ -146,6 +141,7 @@ fun HomeRecordItem(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    customCategories: List<CustomCategory> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val backgroundColor by animateColorAsState(
@@ -180,7 +176,8 @@ fun HomeRecordItem(
             HomeRecordItemLeftContent(
                 record = record,
                 isSelectionMode = isSelectionMode,
-                isSelected = isSelected
+                isSelected = isSelected,
+                customCategories = customCategories
             )
             HomeRecordItemRightContent(record = record)
         }
@@ -195,8 +192,11 @@ private fun HomeRecordItemLeftContent(
     record: Record,
     isSelectionMode: Boolean,
     isSelected: Boolean,
+    customCategories: List<CustomCategory>,
     modifier: Modifier = Modifier
 ) {
+    val categoryIcon = resolveHomeCategoryIcon(record.category, customCategories)
+
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -205,7 +205,7 @@ private fun HomeRecordItemLeftContent(
         if (isSelectionMode) {
             SelectionCheckbox(isSelected = isSelected)
         } else {
-            CategoryIconCircle(category = record.category)
+            CategoryIconCircle(categoryIcon = categoryIcon)
         }
 
         Column {
@@ -230,15 +230,13 @@ private fun HomeRecordItemLeftContent(
 
 /**
  * 分类圆形图标
- * 根据分类名称映射到对应图标，统一使用主题蓝色背景
+ * 使用传入的 CategoryIcon 枚举显示对应图标，统一使用主题蓝色背景
  */
 @Composable
 private fun CategoryIconCircle(
-    category: String,
+    categoryIcon: CategoryIcon,
     modifier: Modifier = Modifier
 ) {
-    val icon = getCategoryIconForName(category)
-
     Box(
         modifier = modifier
             .size(40.dp)
@@ -247,8 +245,8 @@ private fun CategoryIconCircle(
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = icon,
-            contentDescription = category,
+            imageVector = categoryIcon.imageVector,
+            contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = Color.White
         )
@@ -256,25 +254,23 @@ private fun CategoryIconCircle(
 }
 
 /**
- * 根据分类名称获取对应图标向量
+ * 根据分类名称解析对应的图标枚举
+ * 优先从预设分类中查找，找不到则从自定义分类中查找
  */
-private fun getCategoryIconForName(category: String): ImageVector {
-    val expenseIcon = ExpenseCategory.icons[category]
-    val incomeIcon = IncomeCategory.icons[category]
-    val icon = expenseIcon ?: incomeIcon ?: CategoryIcon.OTHER
-
-    return when (icon) {
-        CategoryIcon.RESTAURANT -> Icons.Filled.Restaurant
-        CategoryIcon.TRANSPORT -> Icons.Filled.DirectionsCar
-        CategoryIcon.SHOPPING -> Icons.Filled.ShoppingBag
-        CategoryIcon.ENTERTAINMENT -> Icons.Filled.SportsEsports
-        CategoryIcon.DAILY -> Icons.Filled.LocalConvenienceStore
-        CategoryIcon.SALARY -> Icons.Filled.AccountBalance
-        CategoryIcon.LIVING -> Icons.Filled.Home
-        CategoryIcon.ALLOWANCE -> Icons.Filled.CardGiftcard
-        CategoryIcon.TRANSFER -> Icons.Filled.SwapHoriz
-        CategoryIcon.OTHER -> Icons.Filled.MoreHoriz
+private fun resolveHomeCategoryIcon(
+    category: String,
+    customCategories: List<CustomCategory>
+): CategoryIcon {
+    // 先从预设分类中查找（不区分支出/收入，两边都找）
+    val presetIcon = ExpenseCategory.icons[category] ?: IncomeCategory.icons[category]
+    if (presetIcon != null) {
+        return presetIcon
     }
+    // 再从自定义分类中查找
+    return customCategories
+        .find { it.name == category }
+        ?.icon
+        ?: CategoryIcon.MORE_HORIZ
 }
 
 /**

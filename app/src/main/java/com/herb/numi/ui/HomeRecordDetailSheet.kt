@@ -4,8 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -17,12 +15,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.herb.numi.data.Record
 import com.herb.numi.data.ReimburseStatus
+import com.herb.numi.ui.common.LoadingTextButton
+import com.herb.numi.ui.common.rememberClickThrottler
 import java.text.SimpleDateFormat
 import java.util.*
 
 /**
  * 记录详情底部弹窗
  * 样式：surface背景 + surfaceVariant背景的详情区域
+ *
+ * 功能特性：
+ * - 显示记录完整信息（金额、分类、时间、报销状态、备注）
+ * - 支持修改和删除操作，带防重复点击机制
+ * - 加载状态显示，操作进行中按钮禁用并显示进度指示器
+ * - 适配不同屏幕尺寸，底部安全区域处理
+ *
+ * @param record 要显示详情的记录
+ * @param onDismiss 关闭弹窗回调
+ * @param onEdit 点击修改回调
+ * @param onDelete 点击删除回调
+ * @param isLoading 是否处于加载状态（操作进行中）
+ * @param modifier 修饰符
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,12 +44,13 @@ fun RecordDetailBottomSheet(
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val modalBottomSheetState = rememberModalBottomSheetState()
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isLoading) onDismiss() },
         sheetState = modalBottomSheetState,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -50,14 +64,18 @@ fun RecordDetailBottomSheet(
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            DetailSheetHeader(onEdit = onEdit, onDelete = onDelete)
+            DetailSheetHeader(
+                onEdit = onEdit,
+                onDelete = onDelete,
+                isLoading = isLoading
+            )
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 ),
-                shape = RoundedCornerShape(0.dp) // 圆角
+                shape = RoundedCornerShape(0.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -79,11 +97,17 @@ fun RecordDetailBottomSheet(
 
 /**
  * 详情弹窗头部（标题 + 操作按钮）
+ *
+ * @param onEdit 点击修改回调
+ * @param onDelete 点击删除回调
+ * @param isLoading 是否处于加载状态
+ * @param modifier 修饰符
  */
 @Composable
 private fun DetailSheetHeader(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -104,47 +128,29 @@ private fun DetailSheetHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ActionButton(
+            LoadingTextButton(
                 text = "修改",
-                textColor = MaterialTheme.colorScheme.onSurface,
-                onClick = onEdit
+                onClick = onEdit,
+                isLoading = false,
+                enabled = !isLoading,
+                textColor = MaterialTheme.colorScheme.onSurface
             )
-            ActionButton(
+            LoadingTextButton(
                 text = "删除",
-                textColor = MaterialTheme.colorScheme.error,
-                onClick = onDelete
+                onClick = onDelete,
+                isLoading = false,
+                enabled = !isLoading,
+                textColor = MaterialTheme.colorScheme.error
             )
         }
     }
 }
 
 /**
- * 操作按钮（药丸形状）
- */
-@Composable
-private fun ActionButton(
-    text: String,
-    textColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = modifier
-    ) {
-        Text(
-            text = text,
-            fontSize = 15.sp,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-        )
-    }
-}
-
-/**
  * 金额行
+ *
+ * @param record 记录数据
+ * @param modifier 修饰符
  */
 @Composable
 private fun DetailAmountRow(
@@ -174,6 +180,9 @@ private fun DetailAmountRow(
 
 /**
  * 分类行
+ *
+ * @param category 分类名称
+ * @param modifier 修饰符
  */
 @Composable
 private fun DetailCategoryRow(
@@ -209,6 +218,9 @@ private fun DetailCategoryRow(
  * 时间行
  * 第一行显示最新更新时间，第二行显示创建时间
  * 若更新时间等于创建时间，则不显示第二行
+ *
+ * @param record 记录数据
+ * @param modifier 修饰符
  */
 @Composable
 private fun DetailTimeRow(
@@ -253,9 +265,11 @@ private fun DetailTimeRow(
     }
 }
 
-
 /**
  * 报销状态行
+ *
+ * @param reimburseStatus 报销状态值
+ * @param modifier 修饰符
  */
 @Composable
 private fun DetailReimburseStatusRow(
@@ -287,6 +301,9 @@ private fun DetailReimburseStatusRow(
 
 /**
  * 备注行
+ *
+ * @param note 备注内容
+ * @param modifier 修饰符
  */
 @Composable
 private fun DetailNoteRow(

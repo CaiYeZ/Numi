@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.herb.numi.data.Record
+import com.herb.numi.ui.common.OperationResult
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -17,6 +18,12 @@ import java.util.Calendar
  * 整合时间选择、统计概览、分类报表和明细报表
  *
  * 职责：页面布局和状态管理，具体功能组件已拆分到独立文件
+ *
+ * 功能特性：
+ * - 记录详情弹窗支持修改和删除操作
+ * - 删除操作带加载状态、防重复点击、结果反馈
+ * - 操作完成后自动关闭弹窗并刷新列表（通过Flow自动刷新）
+ * - 屏幕适配：底部安全区域处理
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,6 +33,9 @@ fun BillsScreen(
     onEditRecord: (Record) -> Unit = {}
 ) {
     val allRecords by viewModel.allRecords.collectAsState()
+    val deleteOperationResult by viewModel.deleteOperationResult.collectAsState()
+    val customCategories by viewModel.customCategories.collectAsState()
+
     var timePeriod by remember { mutableStateOf(TimePeriod.MONTH) }
     var selectedDate by remember { mutableStateOf(Calendar.getInstance()) }
     var showMonthPicker by remember { mutableStateOf(false) }
@@ -42,6 +52,42 @@ fun BillsScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    /**
+     * 消费 ViewModel 中的操作消息事件
+     */
+    LaunchedEffect(Unit) {
+        viewModel.operationMessageEvent.collect { event ->
+            event?.getContentIfNotHandled()?.let { message ->
+                scope.launch {
+                    snackbarHostState.showSnackbar(message)
+                }
+            }
+        }
+    }
+
+    /**
+     * 监听删除操作结果，自动清理状态
+     */
+    LaunchedEffect(deleteOperationResult) {
+        when (deleteOperationResult) {
+            is OperationResult.Success -> {
+                // 删除成功，自动关闭确认对话框和详情弹窗
+                showDeleteConfirm = false
+                showDayDetail = false
+                selectedRecord = null
+                recordToDelete = null
+                viewModel.resetDeleteOperationResult()
+            }
+            is OperationResult.Error -> {
+                // 删除失败，关闭加载状态但保留对话框以便重试
+                viewModel.resetDeleteOperationResult()
+            }
+            else -> { /* Idle 或 Loading 状态不处理 */ }
+        }
+    }
+
+    val isDeleting = deleteOperationResult.isLoading
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -132,6 +178,7 @@ fun BillsScreen(
         )
     }
 
+    // 当天消费详情底部弹窗
     if (showDayDetail) {
         DayDetailBottomSheet(
             day = selectedDay,
@@ -141,10 +188,12 @@ fun BillsScreen(
             onDismiss = { showDayDetail = false },
             onRecordClick = { record ->
                 selectedRecord = record
-            }
+            },
+            customCategories = customCategories
         )
     }
 
+    // 记录详情底部弹窗
     if (selectedRecord != null) {
         RecordDetailBottomSheet(
             record = selectedRecord!!,
@@ -160,24 +209,25 @@ fun BillsScreen(
                 recordToDelete = selectedRecord
                 showDeleteConfirm = true
                 selectedRecord = null
-            }
+            },
+            isLoading = isDeleting
         )
     }
 
+    // 单条记录删除确认对话框（显示记录信息）
     if (showDeleteConfirm && recordToDelete != null) {
-        DeleteConfirmDialog(
+        SingleDeleteConfirmDialog(
+            record = recordToDelete!!,
             onConfirm = {
                 viewModel.deleteRecord(recordToDelete!!)
-                scope.launch {
-                    snackbarHostState.showSnackbar("记录已删除")
-                }
-                showDeleteConfirm = false
-                recordToDelete = null
             },
             onDismiss = {
-                showDeleteConfirm = false
-                recordToDelete = null
-            }
+                if (!isDeleting) {
+                    showDeleteConfirm = false
+                    recordToDelete = null
+                }
+            },
+            isLoading = isDeleting
         )
     }
 }

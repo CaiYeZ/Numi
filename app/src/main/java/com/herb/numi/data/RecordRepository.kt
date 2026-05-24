@@ -8,7 +8,10 @@ import kotlinx.coroutines.flow.Flow
  *
  * 采用依赖倒置原则，实现 RecordRepositoryInterface 接口
  */
-class RecordRepository(private val recordDao: RecordDao) : RecordRepositoryInterface {
+class RecordRepository(
+    private val recordDao: RecordDao,
+    private val customCategoryDao: CustomCategoryDao? = null
+) : RecordRepositoryInterface {
 
     /**
      * 获取所有记录
@@ -83,5 +86,41 @@ class RecordRepository(private val recordDao: RecordDao) : RecordRepositoryInter
      */
     override suspend fun updateRecordsReimburseStatus(ids: List<Long>, status: String) {
         recordDao.updateReimburseStatusByIds(ids, status)
+    }
+
+    /**
+     * 批量插入记录（用于数据导入）
+     */
+    override suspend fun importRecords(records: List<Record>) {
+        recordDao.insertAll(records)
+    }
+
+    /**
+     * 清空所有数据（记录和自定义分类）
+     */
+    override suspend fun clearAllData() {
+        recordDao.deleteAll()
+        customCategoryDao?.deleteAll()
+    }
+
+    /**
+     * 批量插入记录（用于数据导入），自动跳过已存在的记录
+     * 基于金额、类型、分类、创建时间判断重复
+     */
+    override suspend fun importRecordsWithDeduplication(records: List<Record>): Int {
+        var insertedCount = 0
+        for (record in records) {
+            val exists = recordDao.recordExists(
+                amount = record.amount,
+                type = record.type,
+                category = record.category,
+                createdAt = record.createdAt
+            )
+            if (exists == 0) {
+                recordDao.insert(record)
+                insertedCount++
+            }
+        }
+        return insertedCount
     }
 }

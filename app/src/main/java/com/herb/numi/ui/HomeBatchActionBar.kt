@@ -30,8 +30,8 @@ fun HomeBatchActionBar(
             .fillMaxWidth()
             .height(56.dp),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
-        shadowElevation = 3.dp
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier

@@ -7,11 +7,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,8 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.herb.numi.data.CustomCategory
 import com.herb.numi.data.Record
-import java.text.SimpleDateFormat
+import com.herb.numi.data.imageVector
 import java.util.*
 
 /**
@@ -42,7 +43,7 @@ fun DetailReport(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp).fillMaxWidth().heightIn(min = 200.dp)) {
             Text(
                 text = if (timePeriod == TimePeriod.MONTH) "日报表" else "月报表",
                 fontSize = 16.sp,
@@ -121,36 +122,66 @@ private fun DetailReportBody(
 ) {
     val days = if (timePeriod == TimePeriod.MONTH) selectedDate.getActualMaximum(Calendar.DAY_OF_MONTH) else 12
 
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        (1..days).forEach { day ->
+    // 预计算所有有记录的日期数据，避免在 LazyColumn 中重复计算
+    val dayDataList = remember(records, timePeriod, selectedDate) {
+        (1..days).mapNotNull { day ->
             val dayRecords = filterRecordsByDay(
                 records = records,
                 timePeriod = timePeriod,
                 selectedDate = selectedDate,
                 day = day
             )
-
             if (dayRecords.isNotEmpty()) {
                 val dayExpense = dayRecords.filter { it.type == "expense" }.sumOf { it.amount }
                 val dayIncome = dayRecords.filter { it.type == "income" }.sumOf { it.amount }
                 val dayBalance = dayIncome - dayExpense
-
-                DetailReportRow(
-                    day = day,
-                    dayIncome = dayIncome,
-                    dayExpense = dayExpense,
-                    dayBalance = dayBalance,
-                    timePeriod = timePeriod,
-                    selectedDate = selectedDate,
-                    onClick = { onDayClick(day, dayRecords) }
-                )
+                DayData(day, dayIncome, dayExpense, dayBalance, dayRecords)
+            } else {
+                null
             }
         }
     }
+
+    LazyColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items(
+            items = dayDataList,
+            key = { it.day }
+        ) { dayData ->
+            DetailReportRow(
+                day = dayData.day,
+                dayIncome = dayData.dayIncome,
+                dayExpense = dayData.dayExpense,
+                dayBalance = dayData.dayBalance,
+                timePeriod = timePeriod,
+                selectedDate = selectedDate,
+                onClick = if (timePeriod == TimePeriod.MONTH) {
+                    { onDayClick(dayData.day, dayData.dayRecords) }
+                } else null
+            )
+        }
+    }
 }
+
+/**
+ * 日报表单行数据封装
+ * 用于 LazyColumn 的 items 渲染
+ *
+ * @param day 日期（日或月）
+ * @param dayIncome 当日收入
+ * @param dayExpense 当日支出
+ * @param dayBalance 当日结余
+ * @param dayRecords 当日所有记录
+ */
+private data class DayData(
+    val day: Int,
+    val dayIncome: Double,
+    val dayExpense: Double,
+    val dayBalance: Double,
+    val dayRecords: List<Record>
+)
 
 /**
  * 过滤指定日期的记录
@@ -188,13 +219,19 @@ private fun DetailReportRow(
     dayBalance: Double,
     timePeriod: TimePeriod,
     selectedDate: Calendar,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
+    val clickableModifier = if (onClick != null && timePeriod == TimePeriod.MONTH) {
+        Modifier.clickable(onClick = onClick)
+    } else {
+        Modifier
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(clickableModifier)
             .padding(vertical = 8.dp, horizontal = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -242,7 +279,8 @@ fun DayDetailBottomSheet(
     timePeriod: TimePeriod,
     selectedDate: Calendar,
     onDismiss: () -> Unit,
-    onRecordClick: (Record) -> Unit
+    onRecordClick: (Record) -> Unit,
+    customCategories: List<CustomCategory> = emptyList()
 ) {
     val dateTitle = if (timePeriod == TimePeriod.MONTH) {
         String.format("%02d-%02d", selectedDate.get(Calendar.MONTH) + 1, day)
@@ -260,7 +298,6 @@ fun DayDetailBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 16.dp)
-                .padding(bottom = 32.dp)
         ) {
             Text(
                 text = dateTitle,
@@ -278,17 +315,25 @@ fun DayDetailBottomSheet(
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
             } else {
-                records.sortedByDescending { it.createdAt }.forEachIndexed { index, record ->
-                    if (index > 0) {
-                        HorizontalDivider(
-                            thickness = 0.1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant
+                LazyColumn(
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    items(
+                        items = records.sortedByDescending { it.createdAt },
+                        key = { it.id }
+                    ) { record ->
+                        DayDetailItem(
+                            record = record,
+                            onClick = { onRecordClick(record) },
+                            customCategories = customCategories
                         )
+                        if (records.indexOf(record) < records.size - 1) {
+                            HorizontalDivider(
+                                thickness = 0.1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant
+                            )
+                        }
                     }
-                    DayDetailItem(
-                        record = record,
-                        onClick = { onRecordClick(record) }
-                    )
                 }
             }
         }
@@ -302,8 +347,11 @@ fun DayDetailBottomSheet(
 private fun DayDetailItem(
     record: Record,
     onClick: () -> Unit,
+    customCategories: List<CustomCategory>,
     modifier: Modifier = Modifier
 ) {
+    val categoryIcon = resolveBillsCategoryIcon(record.category, customCategories)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -316,15 +364,15 @@ private fun DayDetailItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            CategoryIconSmall(category = record.category)
-            
+            CategoryIconSmall(categoryIcon = categoryIcon)
+
             Text(
                 text = record.category,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            
+
             if (!record.note.isNullOrBlank()) {
                 Text(
                     text = " · ${record.note}",
@@ -354,14 +402,13 @@ private fun DayDetailItem(
 
 /**
  * 小尺寸分类图标
+ * 使用传入的 CategoryIcon 枚举显示对应图标，统一使用主题蓝色背景
  */
 @Composable
 private fun CategoryIconSmall(
-    category: String,
+    categoryIcon: com.herb.numi.data.CategoryIcon,
     modifier: Modifier = Modifier
 ) {
-    val icon = getCategoryIconForName(category)
-    
     Box(
         modifier = modifier
             .size(28.dp)
@@ -370,8 +417,8 @@ private fun CategoryIconSmall(
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = icon,
-            contentDescription = category,
+            imageVector = categoryIcon.imageVector,
+            contentDescription = null,
             modifier = Modifier.size(14.dp),
             tint = Color.White
         )
@@ -379,23 +426,22 @@ private fun CategoryIconSmall(
 }
 
 /**
- * 根据分类名称获取对应图标向量
+ * 根据分类名称解析对应的图标枚举
+ * 优先从预设分类中查找，找不到则从自定义分类中查找
  */
-private fun getCategoryIconForName(category: String): ImageVector {
-    val expenseIcon = com.herb.numi.data.ExpenseCategory.icons[category]
-    val incomeIcon = com.herb.numi.data.IncomeCategory.icons[category]
-    val icon = expenseIcon ?: incomeIcon ?: com.herb.numi.data.CategoryIcon.OTHER
-
-    return when (icon) {
-        com.herb.numi.data.CategoryIcon.RESTAURANT -> Icons.Filled.Restaurant
-        com.herb.numi.data.CategoryIcon.TRANSPORT -> Icons.Filled.DirectionsCar
-        com.herb.numi.data.CategoryIcon.SHOPPING -> Icons.Filled.ShoppingBag
-        com.herb.numi.data.CategoryIcon.ENTERTAINMENT -> Icons.Filled.SportsEsports
-        com.herb.numi.data.CategoryIcon.DAILY -> Icons.Filled.LocalConvenienceStore
-        com.herb.numi.data.CategoryIcon.SALARY -> Icons.Filled.AccountBalance
-        com.herb.numi.data.CategoryIcon.LIVING -> Icons.Filled.Home
-        com.herb.numi.data.CategoryIcon.ALLOWANCE -> Icons.Filled.CardGiftcard
-        com.herb.numi.data.CategoryIcon.TRANSFER -> Icons.Filled.SwapHoriz
-        com.herb.numi.data.CategoryIcon.OTHER -> Icons.Filled.MoreHoriz
+private fun resolveBillsCategoryIcon(
+    category: String,
+    customCategories: List<CustomCategory>
+): com.herb.numi.data.CategoryIcon {
+    // 先从预设分类中查找（不区分支出/收入，两边都找）
+    val presetIcon = com.herb.numi.data.ExpenseCategory.icons[category]
+        ?: com.herb.numi.data.IncomeCategory.icons[category]
+    if (presetIcon != null) {
+        return presetIcon
     }
+    // 再从自定义分类中查找
+    return customCategories
+        .find { it.name == category }
+        ?.icon
+        ?: com.herb.numi.data.CategoryIcon.MORE_HORIZ
 }

@@ -61,4 +61,20 @@ interface RecordRepositoryInterface {
      * 批量更新记录的报销状态
      */
     suspend fun updateRecordsReimburseStatus(ids: List<Long>, status: String)
+
+    /**
+     * 批量插入记录（用于数据导入）
+     */
+    suspend fun importRecords(records: List<Record>)
+
+    /**
+     * 清空所有数据（记录和自定义分类）
+     */
+    suspend fun clearAllData()
+
+    /**
+     * 批量插入记录（用于数据导入），自动跳过已存在的记录
+     * @return 实际插入的新记录数量
+     */
+    suspend fun importRecordsWithDeduplication(records: List<Record>): Int
 }

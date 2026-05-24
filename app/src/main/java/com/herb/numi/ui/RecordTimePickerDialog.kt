@@ -73,6 +73,7 @@ fun RecordTimePickerDialog(
                     set(Calendar.HOUR_OF_DAY, tempHour)
                     set(Calendar.MINUTE, tempMinute)
                     set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
                 }
                 onTimeSelected(newTime)
             }) {

@@ -1,25 +1,30 @@
 package com.herb.numi.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.herb.numi.data.Record
 import java.util.*
-import kotlin.math.cos
-import kotlin.math.sin
+import kotlin.math.abs
 
 /**
  * 分类报表卡片
@@ -68,17 +73,11 @@ fun CategoryReportCard(
                         selected = selectedChartType == "expense",
                         onClick = { onChartTypeChange("expense") },
                         label = { Text("支出", fontSize = 12.sp) },
-//                        leadingIcon = {
-//                            Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(16.dp))
-//                        }
                     )
                     FilterChip(
                         selected = selectedChartType == "income",
                         onClick = { onChartTypeChange("income") },
                         label = { Text("收入", fontSize = 12.sp) },
-//                        leadingIcon = {
-//                            Icon(Icons.Default.KeyboardArrowUp, null, modifier = Modifier.size(16.dp))
-//                        }
                     )
                 }
             }
@@ -101,7 +100,7 @@ fun CategoryReportCard(
 
 /**
  * 分类报表内容
- * 包含饼图和分类列表
+ * 包含环形图和分类图例列表
  */
 @Composable
 private fun CategoryReportContent(
@@ -110,163 +109,244 @@ private fun CategoryReportContent(
 ) {
     val total = categoryData.values.sum()
 
-    val sortedData = categoryData.entries.sortedByDescending { it.value }
+    // 大数据量适配：当分类数量 > 8 时，合并小分类到"其他"
+    val processedData = processCategoryData(categoryData)
+
+    val sortedData = processedData.entries.sortedByDescending { it.value }
 
     val primaryColor = MaterialTheme.colorScheme.primary
 
     val maxAmount = sortedData.firstOrNull()?.value ?: 1.0
     val minAmount = sortedData.lastOrNull()?.value ?: 0.0
 
-    val colors = sortedData.map { entry ->
-        calculateColorForAmount(
-            amount = entry.value,
-            maxAmount = maxAmount,
-            minAmount = minAmount,
-            baseColor = primaryColor
-        )
-    }
+    val colors = generateDistinctColors(sortedData.size)
 
     val percentages = sortedData.map { entry ->
         (entry.value / total * 100)
     }
 
-    Box(
+    Column(
         modifier = modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        CategoryPieChartWithAnnotations(
+        // 环形图
+        DonutChart(
+            sortedData = sortedData,
+            colors = colors,
+            total = total,
+            modifier = Modifier.size(180.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 图例列表
+        CategoryLegend(
             sortedData = sortedData,
             colors = colors,
             percentages = percentages,
             total = total,
-            modifier = Modifier.size(220.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 200.dp)
+                .verticalScroll(rememberScrollState())
         )
     }
 }
 
 /**
- * 带批注的饼图组件
- * 从圆心向外延伸标注线，标注线末端显示分类名称和百分比
- * 支持深色主题适配
+ * 环形图组件
+ * 中间显示总金额数值
  */
 @Composable
-private fun CategoryPieChartWithAnnotations(
+private fun DonutChart(
+    sortedData: List<Map.Entry<String, Double>>,
+    colors: List<Color>,
+    total: Double,
+    modifier: Modifier = Modifier
+) {
+    val centerTextColor = MaterialTheme.colorScheme.onSurface
+
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val centerX = size.width / 2
+            val centerY = size.height / 2
+            val radius = minOf(centerX, centerY) * 0.9f
+            val strokeWidth = radius * 0.35f
+
+            var startAngle = -90f
+            sortedData.forEachIndexed { index, entry ->
+                val sweepAngle = (entry.value / total * 360).toFloat()
+
+                drawArc(
+                    color = colors[index],
+                    startAngle = startAngle,
+                    sweepAngle = sweepAngle,
+                    useCenter = false,
+                    topLeft = Offset(centerX - radius, centerY - radius),
+                    size = Size(radius * 2, radius * 2),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
+                )
+
+                startAngle += sweepAngle
+            }
+        }
+
+        // 中间只显示总金额数值
+        Text(
+            text = "¥${String.format("%.0f", total)}",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = centerTextColor,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * 分类图例列表
+ * 显示分类名称、颜色块、金额和百分比
+ */
+@Composable
+private fun CategoryLegend(
     sortedData: List<Map.Entry<String, Double>>,
     colors: List<Color>,
     percentages: List<Double>,
     total: Double,
     modifier: Modifier = Modifier
 ) {
-    val density = LocalDensity.current
-    val textColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val centerCircleColor = MaterialTheme.colorScheme.surface
-
-    Canvas(modifier = modifier) {
-        val centerX = size.width / 2
-        val centerY = size.height / 2
-        val radius = minOf(centerX, centerY) * 0.65f
-
-        var startAngle = -90f
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         sortedData.forEachIndexed { index, entry ->
-            val sweepAngle = (entry.value / total * 360).toFloat()
-            val midAngle = Math.toRadians((startAngle + sweepAngle / 2).toDouble())
-
-            drawArc(
+            CategoryLegendItem(
+                category = entry.key,
                 color = colors[index],
-                startAngle = startAngle,
-                sweepAngle = sweepAngle,
-                useCenter = true,
-                topLeft = Offset(centerX - radius, centerY - radius),
-                size = Size(radius * 2, radius * 2)
+                amount = entry.value,
+                percentage = percentages[index],
+                total = total
             )
-
-            val lineEndX = centerX + (radius * 1.3f) * cos(midAngle).toFloat()
-            val lineEndY = centerY + (radius * 1.3f) * sin(midAngle).toFloat()
-
-            drawLine(
-                color = colors[index].copy(alpha = 0.8f),
-                start = Offset(centerX, centerY),
-                end = Offset(lineEndX, lineEndY),
-                strokeWidth = 1.5f
-            )
-
-            val labelText = "${sortedData[index].key} ${String.format("%.1f", percentages[index])}%"
-            val textPaint = android.graphics.Paint().apply {
-                color = textColor.toArgb()
-                textAlign = android.graphics.Paint.Align.LEFT
-                isAntiAlias = true
-                textSize = with(density) { 12.sp.toPx() }
-            }
-
-            val textX = if (lineEndX > centerX) lineEndX + 4 else lineEndX - textPaint.measureText(labelText) - 4
-            val textY = lineEndY + textPaint.textSize / 3
-
-            drawContext.canvas.nativeCanvas.drawText(labelText, textX, textY, textPaint)
-
-            startAngle += sweepAngle
         }
-
-        drawCircle(
-            color = centerCircleColor,
-            radius = radius * 0.5f,
-            center = Offset(centerX, centerY)
-        )
     }
 }
 
 /**
- * 饼图组件（备用/简化版）
+ * 单个图例项
  */
 @Composable
-private fun CategoryPieChart(
-    sortedData: List<Map.Entry<String, Double>>,
-    colors: List<Color>,
+private fun CategoryLegendItem(
+    category: String,
+    color: Color,
+    amount: Double,
+    percentage: Double,
     total: Double,
     modifier: Modifier = Modifier
 ) {
-    Canvas(modifier = modifier) {
-        var startAngle = -90f
-        sortedData.forEachIndexed { index, entry ->
-            val sweepAngle = (entry.value / total * 360).toFloat()
-            drawArc(
-                color = colors[index],
-                startAngle = startAngle,
-                sweepAngle = sweepAngle,
-                useCenter = true,
-                size = Size(size.width, size.height)
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            // 颜色块
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(color)
             )
-            startAngle += sweepAngle
+
+            // 分类名称
+            Text(
+                text = category,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 金额
+            Text(
+                text = "¥${String.format("%.2f", amount)}",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+
+            // 百分比
+            Text(
+                text = "${String.format("%.1f", percentage)}%",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(45.dp),
+                textAlign = TextAlign.End
+            )
         }
     }
 }
 
 /**
- * 根据金额计算颜色深浅
- * 金额越大颜色越深，金额越小颜色越浅
+ * 大数据量适配
+ * 当分类数量 > 8 时，将占比最小的分类合并到"其他"
  */
-private fun calculateColorForAmount(
-    amount: Double,
-    maxAmount: Double,
-    minAmount: Double,
-    baseColor: Color
-): Color {
-    if (maxAmount == minAmount) return baseColor
+private fun processCategoryData(categoryData: Map<String, Double>): Map<String, Double> {
+    if (categoryData.size <= 8) {
+        return categoryData
+    }
 
-    val ratio = ((amount - minAmount) / (maxAmount - minAmount)).toFloat().coerceIn(0f, 1f)
+    val sortedEntries = categoryData.entries.sortedByDescending { it.value }
+    val topEntries = sortedEntries.take(7)
+    val otherAmount = sortedEntries.drop(7).sumOf { it.value }
 
-    val lightestColor = baseColor.copy(alpha = 0.15f)
+    val result = topEntries.associate { it.key to it.value }.toMutableMap()
+    if (otherAmount > 0) {
+        result["其他"] = otherAmount
+    }
 
-    return lerpColor(lightestColor, baseColor, ratio)
+    return result
 }
 
 /**
- * 颜色线性插值
+ * 生成一组视觉区分度高的颜色
+ * 使用 HSL 色彩空间，确保颜色之间有足够的色相差异
+ * 避免使用主题色及其近似色
  */
-private fun lerpColor(start: Color, end: Color, fraction: Float): Color {
-    return Color(
-        red = start.red + (end.red - start.red) * fraction,
-        green = start.green + (end.green - start.green) * fraction,
-        blue = start.blue + (end.blue - start.blue) * fraction,
-        alpha = start.alpha + (end.alpha - start.alpha) * fraction
+private fun generateDistinctColors(count: Int): List<Color> {
+    if (count <= 0) return emptyList()
+
+    // 预定义一组高区分度的颜色（避免使用 Material 主题蓝/靛蓝）
+    val baseColors = listOf(
+        Color(0xFFE53935), // 红
+        Color(0xFF43A047), // 绿
+        Color(0xFFFB8C00), // 橙
+        Color(0xFF8E24AA), // 紫
+        Color(0xFF00ACC1), // 青
+        Color(0xFFFDD835), // 黄
+        Color(0xFF6D4C41), // 棕
+        Color(0xFFEC407A), // 粉红
+        Color(0xFF3949AB), // 深蓝
+        Color(0xFF00897B), // 青绿
+        Color(0xFFFF7043), // 珊瑚
+        Color(0xFF5E35B1), // 深紫
+        Color(0xFF039BE5), // 天蓝
+        Color(0xFF7CB342), // 浅绿
+        Color(0xFFD81B60), // 玫红
     )
+
+    return (0 until count).map { index ->
+        baseColors[index % baseColors.size]
+    }
 }
